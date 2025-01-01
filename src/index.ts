@@ -5,9 +5,15 @@ import { HTTPException } from 'hono/http-exception';
 import Stripe from 'stripe';
 
 const stripeSecretKey = process.env.STRIPE_SECRET_KEY;
+const stripeWebhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
 
 if (!stripeSecretKey) {
   throw new Error('STRIPE_SECRET_KEY is not defined in environment variables.');
+}
+if (!stripeWebhookSecret) {
+  throw new Error(
+    'STRIPE_WEBHOOK_SECRET is not defined in environment variables.'
+  );
 }
 
 const stripe = new Stripe(stripeSecretKey);
@@ -98,6 +104,30 @@ app.post('/checkout', async (c) => {
     const message = error?.message || 'An unknown error occurred.';
     throw new HTTPException(500, { message });
   }
+});
+
+app.post('/webhook', async (c) => {
+  const rawBody = await c.req.text();
+  const signature = c.req.header('stripe-signature');
+
+  let event;
+  try {
+    event = stripe.webhooks.constructEvent(
+      rawBody,
+      signature!,
+      stripeWebhookSecret!
+    );
+  } catch (error: any) {
+    console.error(`Webhook signature verification failed: ${error.message}`);
+    throw new HTTPException(400);
+  }
+
+  if (event.type === 'checkout.session.completed') {
+    const session = event.data.object;
+    console.log('Checkout Session Completed:', session);
+    // TODO: Implement your fulfillment logic here
+  }
+  return c.text('success');
 });
 
 const port = 3000;
